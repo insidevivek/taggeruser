@@ -1,0 +1,5 @@
+; $Id$
+name = User Hierarchy Auto Tag
+description = Creates a term for each user in its vocabulary and provides a mean to auto tag user's post with user term along with it's hierarchy.
+package = mms
+core = 6.x

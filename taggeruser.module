@@ -1,0 +1,243 @@
+<?php
+
+//$Id$
+
+/**
+* Implementation of hook_user().
+*
+*/
+
+function taggeruser_user($op, &$edit, &$account, $category = NULL) {
+
+	switch($op) {
+
+    case 'load':
+     	$account->tid = _taggeruser_get_user_tid($account->uid); // tid of this_user taxonomy term 
+     	break;
+
+		case 'view' :
+			$account->content['hierarchy'] = array(
+			'#type' => 'user_profile_category',
+			'#title' => t('User Hierarchy'),
+			'#weight' => -10,
+			);
+
+		// user hierarchy information
+		// TODO: display of this information should be in control of module interface
+		
+			$account->content['hierarchy']['hierarchy_my_location'] = array(
+			'#type' => 'user_profile_item',
+			'#title' => t('Your taxonomy hierarchy'),
+			'#value' => _taggeruser_display_my_term_hierarchy($account),
+			'#attributes' => array('class' => 'user_hierarchy_profile_item'),
+			'#weight' => 9,
+			);
+			
+			break;		
+		 
+		 case 'insert':
+    	$term = array(
+				'name' => $account->name,
+				'vid' => variable_get('taggeruser_default_vocabulary',''),
+				// TODO : weight is to be assigned with some priority
+				
+			);
+			taxonomy_save_term($term);
+   	
+    	break;
+    	
+	}
+}
+
+
+/**
+ * Implementation of hook_perm().
+ * TODO: should be used in wrapping the user edit interface. not in use currently
+ */
+function taggeruser_perm() {
+	return array('administer user hierarchy');
+}
+
+ 
+/**
+ * Implementation of hook_menu().
+ */
+ 
+function taggeruser_menu() {
+
+	// User Autotag debugging callback
+	$items['taggeruser_generate'] = array(
+		'title' => 'Generate Vocabulary',
+		'page callback' => '_mms_get_vid',
+		'access callback' => TRUE,
+		'type' => MENU_CALLBACK,
+	);
+	
+	// User Autotag debugging callback
+	$items['mms_hierarchy/%'] = array(
+		'title' => 'mms hierarchy',
+		'page callback' => '_mms_display_hierarchy',
+		'page arguments' => array(1),
+		'access callback' => TRUE,
+	);
+
+
+	return $items;
+}
+
+/**
+ * Implementation of hook_nodeapi().
+ */
+function taggeruser_nodeapi($node, $op, $arg = 0) {
+	
+//	TODO: Update and Insert nodeapi are executed with all node types. Selection of node types over which this nodeapi will work is to be maintained in admin interface of taggeruser
+
+// TODO: post is to be tagged only with user term or with it's hierarchy. decision is to be made by admin interface of taggeruser
+
+  switch ($op) {
+
+    case 'insert':
+        _taggeruser_taxonomy_node_save($node, _taggeruser_get_user_hierarchy_terms($node->uid));
+      break;
+
+    case 'update':
+        _taggeruser_taxonomy_node_save($node, _taggeruser_get_user_hierarchy_terms($node->uid));
+      break;
+
+
+  }
+}
+
+
+
+
+
+/**
+ * Implementation of hook_taxonomy().
+ */ 
+
+// TODO: since module_invoke OR trigger of this hook is after insertion OR updation of vocabulary or terms (as per seen in taxonomy_save_term), it cant be used to check an updation operation. This ignorance can mess up things when default vocabulary of taggeruser is altered through the interface. 
+
+// TODO: Whenever terms are updated i.e. their hierarchy is changed node tagged with those taxonomy terms should be updated.
+
+// Custom Functions : 
+
+/**
+ * TODO To save the taxonomy terms called from hook_nodeapi. Function derived from taxonomy_node_save ( no vid is there in query !!) . I added the vid .. reason 
+ */
+
+function _taggeruser_taxonomy_node_save($node, $terms) {
+  
+  // to avoid primary_key_conflicts 
+  taxonomy_node_delete_revision($node);
+  
+	 if (is_array($terms)) {
+    foreach ($terms as $term) {
+        db_query('INSERT INTO {term_node} (nid,vid, tid) VALUES (%d,%d, %d)', $node->nid, $node->vid, $term);
+      }
+    }
+  }
+
+
+/**
+ * Access callback function for user category yet not in this code .. just as a reminder of this todo
+ * TODO: Can a user select and define one's own hierarchy?
+ */
+
+function _taggeruser_can_choose_own_hierarchy() {
+	return user_access('administer user hierarchy');
+}
+
+
+
+/*
+ * Retrieves logged_in_user's taxonomy term id
+ */
+
+ function _taggeruser_get_user_tid($uid) {
+
+	$user = db_fetch_object(db_query("SELECT * FROM {users} WHERE uid = %d", $uid));
+  $term = taxonomy_get_term_by_name($user->name);
+  return $term[0]->tid;
+
+}
+
+
+/*
+ * Return a hierarchy breadcrumb for user taxonomy term to be displayed in user profile
+ */
+
+ function _taggeruser_display_my_term_hierarchy($account) {
+ 		
+ 		$output = "";
+ 		$array = taxonomy_get_parents_all($account->tid);
+ 		
+ 		$term = end($array);
+ 		$output .= l($term->name,"taxonomy/term/{$term->tid}");
+ 		
+ 		while ($term = prev($array)) {
+ 			$output .= " > ";
+ 			$output .= l($term->name,"taxonomy/term/{$term->tid}");
+ 		}
+ 		return $output;
+ }
+ 
+/*
+ * Helper function whose return array $term is passed to the second paramter of _taggeruser_taxonomy_save_term.
+ */
+  function _taggeruser_get_user_hierarchy_terms($uid) {
+ 		$terms = array();
+ 		$combined_array = taxonomy_get_parents_all(_taggeruser_get_user_tid($uid));
+ 		
+ 		foreach($combined_array as $term_object) {
+ 			$terms[] = $term_object->tid;
+ 		}
+   //TODO : concern the weight sequence of tagged terms on the post;
+ 		return $terms; 
+ }
+ 
+/*
+ * callback to display taxonomy hierarchy terms
+ */
+
+function _mms_display_hierarchy($term_id) {
+	$output = ''	;
+	$vid = variable_get('taggeruser_default_vocabulary','');
+	
+	if($term_id == 0) {
+		$tree = taxonomy_get_tree($vid,0,-1,1);
+		foreach ($tree as $recite) {
+			//checking whether we have more children or not
+			$tree_next = taxonomy_get_children($recite->tid);
+			if(empty($tree_next)) {
+				$items[] = l($recite->name,"taxonomy/term/".$recite->tid);
+			}
+			else {
+				$items[] = l($recite->name." (".count($tree_next).") ","mms_hierarchy/".$recite->tid);
+			}
+			
+		}
+		$output .= theme_item_list($items);
+	}
+	else {
+	
+		//TODO: check whether this term_id exist in our default vocabulary or not !
+		$tree = taxonomy_get_children($term_id);
+		foreach ($tree as $recite) {
+			//checking whether we have more children or not
+			$tree_next = taxonomy_get_children($recite->tid);
+			if(empty($tree_next)) {
+				$items[] = l($recite->name,"taxonomy/term/".$recite->tid);
+			}
+			else {
+				$items[] = l($recite->name." (".count($tree_next).") ","mms_hierarchy/".$recite->tid);
+			}
+				
+		}
+		$output .= theme_item_list($items);
+	}
+	
+	return $output;
+}
+ 
+

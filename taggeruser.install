@@ -1,0 +1,96 @@
+<?php
+// $ID$
+
+/**
+* Implementation of hook_install().
+*/
+
+function taggeruser_install() {
+	
+	// Create new vocabulary "User Hierarchy" ;
+	// TODO : This is the default vocab. We should be able to swap in between vocabularies.
+	_taggeruser_generate_default_vocabulary();
+ 	
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+ 
+function taggeruser_uninstall() {
+
+	// Delete vocabulary "User Hierarchy"
+	// TODO : This must be configured with an interface. Whether vocabulary is going to be deleted
+	//        or not during the module uninstallation
+	
+ 	$vid = variable_get('taggeruser_default_vocabulary','');
+ 	taxonomy_del_vocabulary($vid);
+ 	variable_del('taggeruser_default_vocabulary');
+
+}
+
+
+/**
+ * Custom Function 
+ */
+ 
+ function _taggeruser_generate_default_vocabulary() {
+ 
+			$vocabulary = array(
+				'name' => t('User Hierarchies'),
+				'multiple' => '0',
+				'required' => '0',
+				'hierarchy' => '1',
+				'relations' => '0',
+				'module' => 'taggeruser',
+			); // This Vocabulary should not be activated to be visible in any node type  'node'=> NOTHING
+			
+		switch (taxonomy_save_vocabulary($vocabulary)) {
+    case SAVED_NEW:
+      drupal_set_message(t('Created new vocabulary %name.', array('%name' => $vocabulary['name'])));
+      watchdog('taxonomy', 'Created new vocabulary %name.', array('%name' => $vocabulary['name']), WATCHDOG_NOTICE, l(t('edit'), 'admin/content/taxonomy/edit/vocabulary/'. $vocabulary['vid']));
+      break;
+
+    // ?? why these lines
+    case SAVED_UPDATED: 
+      drupal_set_message(t('Updated vocabulary %name.', array('%name' => $vocabulary['name'])));
+      watchdog('taxonomy', 'Updated vocabulary %name.', array('%name' => $vocabulary['name']), WATCHDOG_NOTICE, l(t('edit'), 'admin/content/taxonomy/edit/vocabulary/'. $vocabulary['vid']));
+      break;
+ 	 		}
+ 	 		// TODO : if vocabulary named 'User Hierarchy' already exists then it comes to strange nature of code and usernames are not being added as $vid is not being retrieved
+ 	 		//        in this user will need user interface to forcely call this function 
+ 	 		
+ 	 		// TODO : swapping in between vocabs can be a cause of duplicate user terms. So code will store an array having the vid of those vocabes over which 'add_user' function has already been executed.
+ 	 		
+			$vid = $vocabulary['vid'];
+			
+			//whether it is newly created or updated. Add user terms to this vocabulary
+			//whenever vocabulary is swapped this function should be called
+			_taggeruser_add_users_to_vocabulary($vid);
+		
+			variable_set('taggeruser_default_vocabulary',$vid);
+
+
+}
+
+function _taggeruser_add_users_to_vocabulary($vid) {
+	// code here
+	// TODO : User edit form can have a form field of associated vocabulary.
+	// TODO : Defining the weight policy that should be associated with the user term.
+	
+	$result = db_query("SELECT name,uid FROM {users} ");
+	
+	while($account = db_fetch_array($result)) {
+	   	// for each user create a  new taxonomy term
+		if($account['uid'] != 0) {	   	
+    	$term = array(
+				'name' => $account['name'],
+				'vid' => $vid,
+				//weight is to be assigned with some priority
+				
+			);
+			taxonomy_save_term($term);
+		}
+	}
+
+}

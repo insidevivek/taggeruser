@@ -1,0 +1,1 @@
+A drupal module which creates a unique classification term for every user. We can manage system by using classification term and then after post of user will automatically tagged by all his classification terms.
